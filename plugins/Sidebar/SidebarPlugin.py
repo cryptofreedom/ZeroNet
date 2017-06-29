@@ -482,7 +482,7 @@ class UiWebsocketPlugin(object):
             "https://raw.githubusercontent.com/texnikru/GeoLite2-Database/master/GeoLite2-City.mmdb.gz"
         ]
         for db_url in db_urls:
-            try:
+            # try:
                 # Download
                 response = helper.httpRequest(db_url)
 
@@ -502,9 +502,9 @@ class UiWebsocketPlugin(object):
                 self.cmd("notification", ["geolite-done", _["GeoLite2 City database downloaded!"], 5000])
                 time.sleep(2)  # Wait for notify animation
                 return True
-            except Exception, err:
-                self.log.error("Error downloading %s: %s" % (db_url, err))
-                pass
+            # except Exception, err:
+            #     self.log.error("Error downloading %s: %s" % (db_url, err))
+            #     pass
         self.cmd("notification", [
             "geolite-error",
             _["GeoLite2 City database download error: {}!<br>Please download manually and unpack to data dir:<br>{}"].format(err, db_urls[0]),

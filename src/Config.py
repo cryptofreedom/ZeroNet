@@ -5,6 +5,8 @@ import locale
 import re
 import ConfigParser
 
+import logging
+
 
 class Config(object):
 
@@ -164,7 +166,6 @@ class Config(object):
         action = self.subparsers.add_parser("cryptSign", help='Sign message using Bitcoin private key')
         action.add_argument('message', help='Message to sign')
         action.add_argument('privatekey', help='Private key')
-
         # Config parameters
         self.parser.add_argument('--verbose', help='More detailed logging', action='store_true')
         self.parser.add_argument('--debug', help='Debug mode', action='store_true')
