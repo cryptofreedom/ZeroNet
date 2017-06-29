@@ -266,6 +266,15 @@ class SiteStorage(object):
 
         content = re.sub("\{(\n[^,\[\{]{10,100}?)\}[, ]{0,2}\n", compact_dict, content, flags=re.DOTALL)
 
+        def compact_list(match):
+            if "\n" in match.group(0):
+                stripped_lines = re.sub("\n[ ]*", "", match.group(1))
+                return match.group(0).replace(match.group(1), stripped_lines)
+            else:
+                return match.group(0)
+
+        content = re.sub("\[([^\[\{]{2,300}?)\][, ]{0,2}\n", compact_list, content, flags=re.DOTALL)
+
         # Remove end of line whitespace
         content = re.sub("(?m)[ ]+$", "", content)
 
@@ -308,7 +317,10 @@ class SiteStorage(object):
         if path == self.directory:
             inner_path = ""
         else:
-            inner_path = re.sub("^%s/" % re.escape(self.directory), "", path)
+            if path.startswith(self.directory):
+                inner_path = path[len(self.directory)+1:]
+            else:
+                raise Exception(u"File not allowed: %s" % path)
         return inner_path
 
     # Verify all files sha512sum using content.json
@@ -339,11 +351,16 @@ class SiteStorage(object):
 
                 if quick_check:
                     ok = os.path.getsize(file_path) == content["files"][file_relative_path]["size"]
+                    if not ok:
+                        err = "Invalid size"
                 else:
-                    ok = self.site.content_manager.verifyFile(file_inner_path, open(file_path, "rb"))
+                    try:
+                        ok = self.site.content_manager.verifyFile(file_inner_path, open(file_path, "rb"))
+                    except Exception, err:
+                        ok = False
 
                 if not ok:
-                    self.log.debug("[CHANGED] %s" % file_inner_path)
+                    self.log.debug("[INVALID] %s: %s" % (file_inner_path, err))
                     if add_changed or content.get("cert_user_id"):  # If updating own site only add changed user files
                         bad_files.append(file_inner_path)
 
@@ -365,7 +382,10 @@ class SiteStorage(object):
                 if quick_check:
                     ok = os.path.getsize(file_path) == content["files_optional"][file_relative_path]["size"]
                 else:
-                    ok = self.site.content_manager.verifyFile(file_inner_path, open(file_path, "rb"))
+                    try:
+                        ok = self.site.content_manager.verifyFile(file_inner_path, open(file_path, "rb"))
+                    except Exception, err:
+                        ok = False
 
                 if ok:
                     if not self.site.content_manager.hashfield.hasHash(file_node["sha512"]):

@@ -273,7 +273,6 @@ class UiWebsocket(object):
 
         ret = {
             "auth_key": self.site.settings["auth_key"],  # Obsolete, will be removed
-            "auth_key_sha512": hashlib.sha512(self.site.settings["auth_key"]).hexdigest()[0:64],  # Obsolete, will be removed
             "auth_address": self.user.getAuthAddress(site.address, create=create_user),
             "cert_user_id": self.user.getCertUserId(site.address),
             "address": site.address,
@@ -378,10 +377,11 @@ class UiWebsocket(object):
         # Reload content.json, ignore errors to make it up-to-date
         site.content_manager.loadContent(inner_path, add_bad_files=False, force=True)
         # Sign using private key sent by user
-        signed = site.content_manager.sign(inner_path, privatekey, extend=extend, update_changed_files=update_changed_files, remove_missing_optional=remove_missing_optional)
-        if not signed:
-            self.cmd("notification", ["error", _["Content signing failed"]])
-            self.response(to, {"error": "Site sign failed"})
+        try:
+            signed = site.content_manager.sign(inner_path, privatekey, extend=extend, update_changed_files=update_changed_files, remove_missing_optional=remove_missing_optional)
+        except Exception, err:
+            self.cmd("notification", ["error", _["Content signing failed"] + "<br><small>%s</small>" % err])
+            self.response(to, {"error": "Site sign failed: %s" % err})
             return
 
         site.content_manager.loadContent(inner_path, add_bad_files=False)  # Load new content.json, ignore errors
@@ -405,6 +405,9 @@ class UiWebsocket(object):
             self.site.settings["serving"] = True
             self.site.saveSettings()
             self.site.announce()
+
+        if not inner_path in self.site.content_manager.contents:
+            return self.response(to, {"error": "File %s not found" % inner_path})
 
         event_name = "publish %s %s" % (self.site.address, inner_path)
         called_instantly = RateLimit.isAllowed(event_name, 30)
@@ -530,7 +533,7 @@ class UiWebsocket(object):
             return self.response(to, {"error": "Forbidden, you can only modify your own files"})
 
         file_info = self.site.content_manager.getFileInfo(inner_path)
-        if file_info.get("optional"):
+        if file_info and file_info.get("optional"):
             self.log.debug("Deleting optional file: %s" % inner_path)
             relative_path = file_info["relative_path"]
             content_json = self.site.storage.loadJson(file_info["content_inner_path"])
@@ -695,11 +698,13 @@ class UiWebsocket(object):
             <script>
              $(".notification .select.cert").on("click", function() {
                 $(".notification .select").removeClass('active')
-                wrapper.ws.cmd('certSet', [this.title])
+                wrapper.ws.cmd('certSet', [this.title], function() {
+                    wrapper.sendInner({"cmd": "response", "to": %s, "result": this.title})
+                })
                 return false
              })
             </script>
-        """
+        """ % to
 
         # Send the notification
         self.cmd("notification", ["ask", body])
@@ -723,6 +728,7 @@ class UiWebsocket(object):
     def actionCertSet(self, to, domain):
         self.user.setCert(self.site.address, domain)
         self.site.updateWebsocket(cert_changed=domain)
+        self.response(to, "ok")
 
     # List all site info
     def actionSiteList(self, to):
@@ -822,8 +828,6 @@ class UiWebsocket(object):
     def actionServerUpdate(self, to):
         self.cmd("updating")
         sys.modules["main"].update_after_shutdown = True
-        if sys.modules["main"].file_server.tor_manager.tor_process:
-            sys.modules["main"].file_server.tor_manager.stopTor()
         SiteManager.site_manager.save()
         sys.modules["main"].file_server.stop()
         sys.modules["main"].ui_server.stop()
